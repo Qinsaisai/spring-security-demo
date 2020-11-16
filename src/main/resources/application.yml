@@ -1,0 +1,44 @@
+# SPRING BOOT PROPERTIES
+spring:
+
+  # IDENTITY (ContextIdApplicationContextInitializer)
+  application:
+    name: auth-manage
+
+  # PROFILES
+  profiles:
+    active: dev
+
+  # JMX
+  jmx:
+    enabled: false
+
+  # 优雅停机宽限期时间
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+# ----------------------------------------
+# WEB PROPERTIES
+# ----------------------------------------
+server:
+  port: 8080
+  shutdown: graceful
+  servlet:
+    context-path: /api
+
+# ----------------------------------------
+# ACTUATOR PROPERTIES
+# ----------------------------------------
+# MANAGEMENT HTTP SERVER (ManagementServerProperties)
+management:
+  # ENDPOINTS WEB CONFIGURATION (WebEndpointProperties)
+  endpoints:
+    web:
+      exposure:
+        include: 'prometheus'
+
+# --------------
+# Mybatis-Plus
+# --------------
+mybatis-plus:
+  mapper-locations: classpath:mapper/*Mapper.xml
