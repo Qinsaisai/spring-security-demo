@@ -1,5 +1,5 @@
 ## 认证和鉴权
-权限包括认证和鉴权两部分，auth-manage采用了SpringSecurity+JWT的权限验证，代码基本在auth-manage/src/main/java/com/haier/manage/auth中。
+权限包括认证和鉴权两部分，spring-security-demo采用了SpringSecurity+JWT的权限验证。
 
 ### SpringSecurity+JWT
 - SpringSecurity是Spring家族中的一个安全管理框架，其主要功能为认证、授权和攻击防护。在使用SpringSecurity时，首先在pom中引入依赖：
@@ -30,7 +30,7 @@ JWT的详细介绍可以参考[JWT官网](https://jwt.io/introduction/)。在使
     <scope>compile</scope>
 </dependency>
 ```
-auth-manage/src/main/java/com/haier/manage/auth/util/JwtTokenUtil是一个自定义[JWT工具类](#jwt工具类)，包含生成token、校验token是否正确、校验token是否失效、根据token获取用户信息等一系列方法。
+spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自定义[JWT工具类](#jwt工具类)，包含生成token、校验token是否正确、校验token是否失效、根据token获取用户信息等一系列方法。
 
 ### 登录流程
 1. 自定义一个工号登录认证的Filter来拦截工号登录路径，这个Filter继承AbstractAuthenticationProcessingFilter，只需实现两部分，一个是RequestMatcher，指名拦截的Request类型和路径；另外就是从json body中提取出账号和密码提交给AuthenticationManager。
@@ -278,10 +278,10 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint, Se
 ```
 
 ### 鉴权介绍
-在auth-manage项目中，采用RBAC的权限模型，即对系统操作的各种权限不是直接授予具体的用户，而是在用户集合与权限集合之间建立一个角色集合。每一种角色对应一组相应的权限。一旦用户被分配了适当的角色后，该用户就拥有此角色的所有操作权限。
+在权限管理项目中，采用RBAC的权限模型，即对系统操作的各种权限不是直接授予具体的用户，而是在用户集合与权限集合之间建立一个角色集合。每一种角色对应一组相应的权限。一旦用户被分配了适当的角色后，该用户就拥有此角色的所有操作权限。
 所以，鉴权可以证明你有系统的哪些权限，鉴权的过程是校验角色是否包含某些接口的权限。
 
-auth-manage项目对于接口权限控制的逻辑如下：
+权限管理项目对于接口权限控制的逻辑如下：
 1. 将需要鉴权的接口维护到接口列表中，未添加到数据表sys_api中的接口默认所有角色都可以访问；
 2. 给接口列表中的接口授予角色权限，即哪种角色可以访问该接口，如果接口未授权那么任何角色都可以访问；
 3. 接口请求通过自定义权限资源过滤器MyFilterInvocationSecurityMetadataSource，来加载这个接口访问时所需要的具体权限，即返回这个url对应的角色权限。这个自定义权限资源过滤器
@@ -493,7 +493,7 @@ public class SpringSecurityConfig extends WebSecurityConfigurerAdapter {
 ```
 
 ### JWT工具类
-在auth-manage/src/main/java/com/haier/manage/auth/util下自定义了一个Jwt工具类JwtTokenUtil，定义了一系列与jwt token相关的方法，如下所示为其中几个方法：
+在spring-security-demo/src/main/java/com/qss/study/util下自定义了一个Jwt工具类JwtTokenUtil，定义了一系列与jwt token相关的方法，如下所示为其中几个方法：
 
 1. 生成token
 ```java

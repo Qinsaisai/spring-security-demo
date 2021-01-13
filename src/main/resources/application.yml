@@ -3,7 +3,7 @@ spring:
 
   # IDENTITY (ContextIdApplicationContextInitializer)
   application:
-    name: auth-manage
+    name: spring-security-demo
 
   # PROFILES
   profiles:
