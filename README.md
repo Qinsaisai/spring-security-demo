@@ -1,5 +1,5 @@
 ## 认证和鉴权
-权限包括认证和鉴权两部分，spring-security-demo采用了SpringSecurity+JWT的权限验证。
+权限包括认证和鉴权两部分，spring-security-demo采用了SpringSecurity+JWT的权限验证。该例目前仅实现了认证部分，还未实现鉴权部分
 
 ### SpringSecurity+JWT
 - SpringSecurity是Spring家族中的一个安全管理框架，其主要功能为认证、授权和攻击防护。在使用SpringSecurity时，首先在pom中引入依赖：
@@ -33,33 +33,34 @@ JWT的详细介绍可以参考[JWT官网](https://jwt.io/introduction/)。在使
 spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自定义[JWT工具类](#jwt工具类)，包含生成token、校验token是否正确、校验token是否失效、根据token获取用户信息等一系列方法。
 
 ### 登录流程
-1. 自定义一个工号登录认证的Filter来拦截工号登录路径，这个Filter继承AbstractAuthenticationProcessingFilter，只需实现两部分，一个是RequestMatcher，指名拦截的Request类型和路径；另外就是从json body中提取出账号和密码提交给AuthenticationManager。
+1. 自定义一个账号登录认证的Filter来拦截账号登录路径，这个Filter继承AbstractAuthenticationProcessingFilter，只需实现两部分，一个是RequestMatcher，指名拦截的Request类型和路径；另外就是从json body中提取出账号和密码提交给AuthenticationManager。
     
     ```java
     @Slf4j
     @Component
-    public class IdmUsernamePasswordAuthenticationFilter extends AbstractAuthenticationProcessingFilter{
-        public IdmUsernamePasswordAuthenticationFilter(IdmLoginAuthenticationManager idmLoginAuthenticationManager,
-                                                       LoginSuccessHandler loginSuccessHandler,
-                                                       LoginFailureHandler loginFailureHandler) {
+    public class MyUsernamePasswordAuthenticationFilter extends AbstractAuthenticationProcessingFilter {
+    
+        public MyUsernamePasswordAuthenticationFilter(LoginAuthenticationManager loginAuthenticationManager,
+                                                      LoginSuccessHandler loginSuccessHandler,
+                                                      LoginFailureHandler loginFailureHandler) {
             //拦截url为 "/login" 的POST请求
             super(new AntPathRequestMatcher("/login", "POST"));
-            this.setAuthenticationManager(idmLoginAuthenticationManager);
+            this.setAuthenticationManager(loginAuthenticationManager);
             this.setAuthenticationSuccessHandler(loginSuccessHandler);
             this.setAuthenticationFailureHandler(loginFailureHandler);
         }
     
         @Override
-        public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException, IOException, ServletException {
+        public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws IOException {
             //从json中获取username和password
-            String body = StreamUtils.copyToString(request.getInputStream(), Charset.forName("UTF-8"));
-            String username = null, password = null;
+            String body = StreamUtils.copyToString(request.getInputStream(), StandardCharsets.UTF_8);
+            String username = null;
+            String password = null;
             if(StringUtils.hasText(body)) {
                 JSONObject jsonObj = JSON.parseObject(body);
                 username = jsonObj.getString("account");
                 password = jsonObj.getString("password");
             }
-            log.info("idm登录前端传入的username:{},password:{}",username,password);
             if (username == null){
                 username = "";
             }
@@ -70,25 +71,26 @@ spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自�
             //封装到token中提交
             UsernamePasswordAuthenticationToken authRequest = new UsernamePasswordAuthenticationToken(
                     username, password);
+    
             return this.getAuthenticationManager().authenticate(authRequest);
         }
     }
     ```
 2. 自定义认证管理类实现AuthenticationManager接口，所有的认证请求（比如login）都会通过提交一个Token给AuthenticationManager的authenticate()方法来实现。从上述工号登录认证Filter可以看到，
-    我们提交UsernamePasswordAuthenticationToken给指定的自定义认证管理器IdmLoginAuthenticationManager，自定义认证管理类如下所示：
+    我们提交UsernamePasswordAuthenticationToken给指定的自定义认证管理器LoginAuthenticationManager，自定义认证管理类如下所示：
     ```java
     @Component
-    public class IdmLoginAuthenticationManager implements AuthenticationManager {
+    public class LoginAuthenticationManager implements AuthenticationManager {
         @Resource
-        private IdmLoginAuthenticationProvider idmLoginAuthenticationProvider;
+        private LoginAuthenticationProvider loginAuthenticationProvider;
     
-        public IdmLoginAuthenticationManager(IdmLoginAuthenticationProvider idmLoginAuthenticationProvider){
-            this.idmLoginAuthenticationProvider=idmLoginAuthenticationProvider;
+        public LoginAuthenticationManager(LoginAuthenticationProvider loginAuthenticationProvider){
+            this.loginAuthenticationProvider=loginAuthenticationProvider;
         }
     
         @Override
-        public Authentication authenticate(Authentication authentication) throws AuthenticationException {
-            Authentication result = idmLoginAuthenticationProvider.authenticate(authentication);
+        public Authentication authenticate(Authentication authentication) {
+            Authentication result = loginAuthenticationProvider.authenticate(authentication);
             if (Objects.nonNull(result)) {
                 return result;
             }
@@ -97,45 +99,29 @@ spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自�
     }
     ```
 3. 所有的认证请求都会通过提交一个Token给AuthenticationManager的authenticate()方法来实现，但是，具体的校验动作其实并不是AuthenticationManager来做，而是会由AuthenticationManager将请求转发给其具体的实现类来做，即
-认证的具体实现类AuthenticationProvider。所以自定义一个认证的具体实现类，在这个类中进行工号登录的具体校验动作，如下所示：
+认证的具体实现类AuthenticationProvider。所以自定义一个认证的具体实现类，在这个类中进行账号登录的具体校验动作，如下所示：
     ```java
     @Slf4j
     @Component
-    public class IdmLoginAuthenticationProvider implements AuthenticationProvider {
+    public class LoginAuthenticationProvider implements AuthenticationProvider {
         @Resource
-        private JwtUserService jwtUserService;
-        @Resource
-        private IdmClient idmClient;
-        @Value("${idm.appId}")
-        private String appId;
+        private SysUserService sysUserService;
+    
         private static final PasswordEncoder ENCODER = new BCryptPasswordEncoder();
     
         @Override
-        public Authentication authenticate(Authentication authentication) throws AuthenticationException {
+        public Authentication authenticate(Authentication authentication) {
+            log.info("authentication1:{}",authentication);
             String username = (authentication.getPrincipal() == null) ? "NONE_PROVIDED" : authentication.getName();
             String password = (String) authentication.getCredentials();
             if(StringUtils.isBlank(username) || StringUtils.isBlank(password)){
-                throw new InternalAuthenticationServiceException(AuthExceptionEnum.ACCOUNT_PWD_EMPTY.getMessage());
+                throw new InternalAuthenticationServiceException("账号或密码为空，请检查");
             }
-            UserDetails loginUserInfo=jwtUserService.loadUserByUsername(username);
-    
-            if (!((LoginUserInfo) loginUserInfo).getAccountType().equals(AccountTypeEnum.IDM_ACCOUNT.getType())) {
-                throw new InternalAuthenticationServiceException(AuthExceptionEnum.ACCOUNT_TYPE_ERROR.getMessage());
-            }
-            //验证idm登陆
-            ServletRequestAttributes requestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            assert requestAttributes != null;
-            HttpServletRequest request = requestAttributes.getRequest();
-            String remoteHost = ServletUtil.getClientIP(request);
-            try {
-                String authStr = idmClient.authenticate(appId, username, password, remoteHost);
-                JSONObject jsonObject = JSON.parseObject(authStr);
-                if (jsonObject.getJSONObject(CommonConstants.IDM_DATA) == null || jsonObject.getJSONObject(CommonConstants.IDM_DATA).getString(CommonConstants.IDM_TOKENID) == null) {
-                    //返回数据中带有tokenId 说明调用成功
-                    throw new InternalAuthenticationServiceException(AuthExceptionEnum.IDM_LOGIN_FAIL.getMessage());
-                }
-            } catch (FeignCallException e) {
-                throw new InternalAuthenticationServiceException(AuthExceptionEnum.IDM_LOGIN_FAIL.getMessage());
+            UserDetails loginUserInfo= sysUserService.loadUserByUsername(username);
+            log.info("loginUserInfo1:{}",loginUserInfo);
+            //验证密码是否匹配
+            if (!ENCODER.matches(password, loginUserInfo.getPassword())) {
+                throw new InternalAuthenticationServiceException("密码错误，请重新输入密码");
             }
             UsernamePasswordAuthenticationToken result = new UsernamePasswordAuthenticationToken(loginUserInfo, null, loginUserInfo.getAuthorities());
             result.setDetails(authentication.getDetails());
@@ -144,7 +130,6 @@ spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自�
     
         @Override
         public boolean supports(Class<?> aClass) {
-            //这个方法返回true，说明支持该类型的token
             return aClass.isAssignableFrom(UsernamePasswordAuthenticationToken.class);
         }
     }
@@ -155,25 +140,26 @@ spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自�
     ```java
     @Slf4j
     @Service
-    public class JwtUserService implements UserDetailsService {
+    public class SysUserService extends ServiceImpl<SysUserMapper, SysUser> implements UserDetailsService {
         @Resource
-        private SysUserService sysUserService;
+        private SysRoleService sysRoleService;
     
         @Override
-        public UserDetails loadUserByUsername(String s) throws UsernameNotFoundException {
+        public UserDetails loadUserByUsername(String s){
             //账号不存在
-            SysUser sysUser = sysUserService.getByUserAccount(s);
+            SysUser sysUser = getByUserAccount(s);
             if (Objects.isNull(sysUser)) {
-                throw new InternalAuthenticationServiceException(AuthExceptionEnum.ACCOUNT_EMPTY.getMessage());
-            }
-            //账号被锁定
-            if (sysUser.getLockFlag().equals(CommonConstants.STATUS_LOCK)) {
-                throw new InternalAuthenticationServiceException(AuthExceptionEnum.ACCOUNT_FREEZE_ERROR.getMessage());
+                throw new InternalAuthenticationServiceException("账号不存在，请检查");
             }
             //登录用户信息
-            LoginUserInfo loginUserInfo = sysUserService.getLoginUserInfo(s);
+            LoginUserInfo loginUserInfo = new LoginUserInfo();
+            BeanUtils.copyProperties(sysUser, loginUserInfo);
+            List<SysRole> sysRoleList = sysRoleService.listRolesByUserAccount(s);
+            loginUserInfo.setRoleList(sysRoleList);
+            log.info("JwtUserService中的loginUserInfo:{}",loginUserInfo);
             return loginUserInfo;
         }
+        ......
     }
     ```
 5. 自定义认证结果处理类，登录认证filter将token交给provider做校验，校验的结果无非两种，成功或者失败。对于这两种结果，我们只需要实现两个Handler接口，并set到登录认证Filter里面，Filter在收到Provider的处理结果后会回调这两个Handler的方法。
@@ -185,18 +171,17 @@ spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自�
         
             @Override
             public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException, ServletException {
+                log.info("登录成功后的处理结果");
                 LoginUserInfo loginUserInfo=(LoginUserInfo) authentication.getPrincipal();
-                JwtPayLoad jwtPayLoad=new JwtPayLoad(loginUserInfo);
+        
+                JwtPayLoad jwtPayLoad=new JwtPayLoad(loginUserInfo.getUserAccount());
                 String token= JwtTokenUtil.generateToken(jwtPayLoad);
-                response.addHeader(CommonConstants.AUTHORIZATION, token);
-                response.setCharacterEncoding(CharsetUtil.UTF_8);
-                response.setContentType(ContentType.JSON.toString());
-                Map<String,Object> result=new HashMap<>();
-                result.put("code","success");
-                result.put("message","");
-                result.put("data",loginUserInfo);
-                String loginUser = JSON.toJSONString(result);
-                response.getWriter().write(loginUser);
+                response.addHeader("Authorization", token);
+                String code="success";
+                String message="success";
+                int status= HttpStatus.OK.value();
+                Object data=loginUserInfo;
+                ResponseUtil.ResponseResult(response, code, message, status, data);
             }
         }
         ```
@@ -207,7 +192,12 @@ spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自�
         public class LoginFailureHandler implements AuthenticationFailureHandler {
             @Override
             public void onAuthenticationFailure(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse, AuthenticationException e) throws IOException, ServletException {
-                ResponseUtil.responseExceptionError(httpServletResponse, CommonErrorCode.LOGIN_FAIL, HttpStatus.UNAUTHORIZED, e.getMessage(), httpServletRequest.getRequestURI());
+                log.info("登录失败后的处理结果:{}",e.getMessage());
+                String code="fail";
+                String message="登录失败";
+                int status=HttpStatus.UNAUTHORIZED.value();
+                Object data=null;
+                ResponseUtil.ResponseResult(httpServletResponse, code, message, status, data);
             }
         }
         ```
@@ -220,20 +210,21 @@ spring-security-demo/src/main/java/com/qss/study/util/JwtTokenUtil是一个自�
 @Component
 public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
     @Resource
-    private AuthService authService;
+    private SysUserService sysUserService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws IOException, ServletException {
+        log.info("无论是谁都要先从我这过滴");
         // 1.如果当前请求带了token，判断token时效性，并获取当前登录用户信息
-        LoginUserInfo loginUserInfo = null;
+        String userAccount = null;
         try {
-            String token = request.getHeader(CommonConstants.AUTHORIZATION);
+            String token = request.getHeader("Authorization");
             if (StrUtil.isNotEmpty(token)){
                 //token不是以Bearer打头，则响应回格式不正确
                 token = JwtTokenUtil.judgeTokenFormat(token);
             }
             if (StrUtil.isNotEmpty(token)) {
-                loginUserInfo = JwtTokenUtil.getLoginUserByToken(token);
+                userAccount = JwtTokenUtil.getLoginUserAccountByToken(token);
                 //刷新token,如果当前时间已超过所定义的过期时间的一半，则生成新的token
                 Claims claims = JwtTokenUtil.getClaimsFromToken(token);
                 Date expiration = claims.getExpiration();
@@ -242,20 +233,26 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
                 long now = expiration.getTime() - (new Date()).getTime();
                 if (now < time / 2) {
                     //构造jwtPayLoad
-                    JwtPayLoad jwtPayLoad = new JwtPayLoad(loginUserInfo);
+                    JwtPayLoad jwtPayLoad = new JwtPayLoad(userAccount);
                     String newToken = JwtTokenUtil.generateToken(jwtPayLoad);
-                    response.addHeader(CommonConstants.AUTHORIZATION, newToken);
+                    response.addHeader("Authorization", newToken);
                 }
             }
         } catch (Exception e) {
             //token过期或者token失效的情况，响应给前端
-            ResponseUtil.responseExceptionError(response, CommonErrorCode.TOKEN_EXCEPTION, HttpStatus.UNAUTHORIZED, AuthExceptionEnum.REQUEST_TOKEN_ERROR.getMessage(), request.getRequestURI());
+            String code="fail";
+            String message="访问"+request.getRequestURI()+"时token错误";
+            int status=HttpStatus.UNAUTHORIZED.value();
+            Object data=null;
+            ResponseUtil.ResponseResult(response, code, message, status, data);
             return;
         }
+
         // 2.如果当前登录用户不为空，就设置spring security上下文
-        if (ObjectUtil.isNotNull(loginUserInfo)) {
-            authService.setSpringSecurityContextAuthentication(loginUserInfo);
+        if (ObjectUtil.isNotNull(userAccount)) {
+            sysUserService.setSpringSecurityContextAuthentication(userAccount);
         }
+
         // 3.其他情况放开过滤
         filterChain.doFilter(request, response);
     }
@@ -271,13 +268,21 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint, Se
 
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException e) throws IOException {
+        log.info("我没有带token呀");
         //响应给前端无权限访问本接口（没有携带token）
-        ResponseUtil.responseExceptionError(response, CommonErrorCode.TOKEN_EXCEPTION, HttpStatus.UNAUTHORIZED, AuthExceptionEnum.REQUEST_TOKEN_EMPTY.getMessage(), request.getRequestURI());
+        String code="fail";
+        String message=request.getRequestURI()+"时,请求token为空，请携带token访问本接口";
+        int status=HttpStatus.UNAUTHORIZED.value();
+        Object data=null;
+        ResponseUtil.ResponseResult(response, code, message, status, data);
     }
 }
 ```
 
 ### 鉴权介绍
+
+todo: 代码还未实现
+
 在权限管理项目中，采用RBAC的权限模型，即对系统操作的各种权限不是直接授予具体的用户，而是在用户集合与权限集合之间建立一个角色集合。每一种角色对应一组相应的权限。一旦用户被分配了适当的角色后，该用户就拥有此角色的所有操作权限。
 所以，鉴权可以证明你有系统的哪些权限，鉴权的过程是校验角色是否包含某些接口的权限。
 
